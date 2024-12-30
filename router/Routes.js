@@ -3,11 +3,11 @@ const express = require('express');
 
 const router = express();
 
-// const db = require('../connection')
-// const collection = db.collection('books');
+const db = require('../connection')
+const collection = db.collection('books');
+const Book = require("../models/books")
 
-const mongoose = require('mongoose');
-mongoose.connection
+
 
 router.get("/", async(req, res) => {
     console.log(req.method);
@@ -15,90 +15,114 @@ router.get("/", async(req, res) => {
     console.log(req.query);
 
     try {
-        const books  = await collection.find().toArray();
-        res.json(books)
+        const books  = await Book.find();
+      
+      const formattedBooks = books.map((book) => ({
+        ...book._doc, 
+        publishedDate: book.publishedDate
+            ? new Intl.DateTimeFormat('en-GB', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+              }).format(book.publishedDate)
+            : null, 
+    }));
+
+    console.log(formattedBooks);
+    res.json(formattedBooks);
     } catch (error) {
         res.status(500).json({ message: "Unable to fetch books from the database" });
     }
 });
 
-router.get("/:id", getObjectId, async(req, res) => {
-    console.log(req.method);
-    console.log(req.url);
-    console.log("Fetching:", req.params.id);
-    console.log(req.query);
-    try {
-        const book  = await collection.findOne({
-            _id: req.objId,
-        });
-        res.json(book)
-    } catch (error) {
-        res.status(500).json({ message: "Unable to fetch book from the database" });
-    }
-    });
 
 router.post("/", async(req, res) => {
     console.log(req.method);
     console.log(req.body);
     
-    const {  author, title } = req.body;
-    const newBook = {  author, title };
+    
 
     try {
-        await collection.insertOne(newBook)
-        res.json(newBook)
+        const { title, author, publishedDate, genre, price } = req.body;
+
+        const [day, month, year] = publishedDate.split("-");
+        const formattedDate = new Date(`${year}-${month}-${day}`);
+
+        const newBook = new Book({
+            title,
+            author,
+            publishedDate: formattedDate,
+            genre,
+            price,
+        });
+
+        const response = await newBook.save();
+
+        if (!response) {
+            
+            return res.status(500).json({ message: "Book not saved to the database" });
+        }
+
+        res.json({ message: "Book added to the database", data: response });
+        // res.json(req.body)
     } catch (error) {
-        console.error(err);
+        console.error(error);
         res.status(500).json({ message: "unable to open a file while writing on server" });
         return;
     }
 });
 
-router.patch("/:id", getObjectId, async(req, res) => {
-    console.log(req.method);
-    console.log(req.url);
-    console.log("Editing:", req.params.id);
-    console.log(req.body);
-
-    const { author , title } = req.body;
-
+router.put("/:title", async (req, res) => {
     try {
-        let result = await collection.findOneAndUpdate(
-            {_id: req.objId},
-            {
-                $set: { 
-                    author,
-                    title
-                }
-            })
-            res.json(result)
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Unable to modify book data" });
-        return;
-    }
-});
+        const { title } = req.params; 
+        const updatedDetails = req.body; 
 
-router.delete("/:id", getObjectId, async(req, res) => {
-    console.log(req.method);
-    console.log(req.url);
-    console.log("Deleting:", req.params.id);
-
-    try {
-        const book = await collection.findOneAndDelete(
-            {_id: req.objId}
-        )
-        res.json(book)
-    } catch (error) {
         
+        const updatedBook = await Book.findOneAndUpdate(
+            { title: title }, 
+            { $set: updatedDetails }, 
+            { new: true }
+        );
+
+        
+        if (!updatedBook) {
+            return res.status(404).json({ message: "Book not found with the specified title" });
+        }
+
+        
+        res.json(updatedBook);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Failed to update the book" });
     }
 });
 
-  function getObjectId(req, res, next){
-    const objId = new mongodb.ObjectId(req.params.id)
-    req.objId = objId;
-    next();
-  }
+
+
+router.delete("/:title", async(req, res) => {
+    console.log(req.method);
+    console.log(req.url);
+    console.log("Deleting:", req.params.title);
+
+    try {
+        const {title} = req.params;
+        const deletedBook = await Book.findOneAndDelete(
+            {title:title}
+        )
+        if (!deletedBook) {
+            return res.status(404).json({ message: "Book not found with the specified title" });
+        }
+        res.json({
+            message: "Book successfully deleted",
+            deletedBook: deletedBook,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Failed to delete the book" });
+    }
+});
+
+
 
 
 module.exports = router
